@@ -143,105 +143,209 @@ class Ast {
     }
 
 
-    createFormula(ast, vector) {
-        if (ast.Operand == "move second child to first child") {
-            return this.clearVarName(ast.childs[0].Operand) +" = " + this.createFormula(ast.childs[1]);
-        } else if (ast.Operand == "direct index") {
-            if (ast.childs[0].TypeOfOp == 'temp 4-component vector of float') {
-                return this.extractAssignmentForVar(ast.childs[0].Operand) + "." + this.createFormula(ast.childs[1], true)
-            } else if (ast.childs[0].TypeOfOp == 'temp 3-component vector of float') {
-                return this.extractAssignmentForVar(ast.childs[0].Operand) + "." + this.createFormula(ast.childs[1], true)
-            } else if (ast.childs[0].Operand == 'texture') {
-                return this.createFormula(ast.childs[0]) + "." + this.createFormula(ast.childs[1], true)
-            } else {
-                return this.clearVarName(ast.childs[0].Operand) + "." + this.createFormula(ast.childs[1], true)
-            }
-        } else if (ast.Operand == "component-wise multiply") {
-            return "(" + this.createFormula(ast.childs[0]) + ") * (" +this.createFormula(ast.childs[1])+")" ;
-        } else if (ast.Operand == "dot-product") {
-            return "dot(" + this.createFormula(ast.childs[0]) + "," +this.createFormula(ast.childs[1])+")" ;
-        } else if (ast.Operand == "divide") {
-            return "(" + this.createFormula(ast.childs[0]) + ") / (" +this.createFormula(ast.childs[1])+")" ;
-        } else if (ast.Operand == "pow") {
-            return "pow(" + this.createFormula(ast.childs[0]) + ", " +this.createFormula(ast.childs[1])+")" ;
-        } else if (ast.Operand == "normalize") {
-            return "normalize(" + this.createFormula(ast.childs[0]) + ")";
-        } else if (ast.Operand == "Negate value") {
-            return "-(" + this.createFormula(ast.childs[0]) + ")";
-        } else if (ast.Operand == "vector-scale") {
-            return "(" +this.createFormula(ast.childs[0]) + ") * (" +this.createFormula(ast.childs[1])+")";
-        } else if (ast.Operand == "texture") {
-            if (!ast.childs[0]) {
-                console.log("error occured in ", this.fileName, JSON.stringify(ast));
-            }
-            return "texture(" +this.createFormula(ast.childs[0]) + "," + this.createFormula(ast.childs[1]) + ")";
-        } else if (ast.Operand == "add") {
-            return this.createFormula(ast.childs[0]) + " + " + this.createFormula(ast.childs[1]);
-        } else if (ast.Operand == "subtract") {
-            return this.createFormula(ast.childs[0]) + " - " + this.createFormula(ast.childs[1]);
-        } else if (ast.Operand == "Construct vec4") {
-            var result = "vec4(" +ast.childs.map((a) => {return this.createFormula(a)}).join(", ") + ")";
-    
-            return result;
-        } else if (ast.Operand == "Construct vec3") {
-            result = "vec3(" +ast.childs.map((a) => {return this.createFormula(a)}).join(", ") + ")";
-    
-            return result;
-        } else if (ast.Operand == "mix") {
-            result = "mix(" +ast.childs.map((a) => {return this.createFormula(a)}).join(", ") + ")";
-    
-            return result;
-        } else if (ast.Operand == "clamp") {
-            result = "clamp(" +ast.childs.map((a) => {return this.createFormula(a)}).join(", ") + ")";
-    
-    
-            return result;
-        } else if (ast.Operand == "vector swizzle") {
-            var index = "";
-            var indexes = ast.childs[1].childs;
-            for (var i = 0; i < indexes.length; i++) {
-                index += this.createFormula(indexes[i], true);
-            }
-    
-            return this.createFormula(ast.childs[0]) + "." + index;
-        } else if (ast.Operand == "Constant:") {
-            if (vector) {
-                var colors = ['r', 'g', 'b', 'a'];
-                return colors[parseInt(ast.childs[0].Operand)];
-            } else {
-                return ast.childs[0].Operand;
-            }
-        } else if (ast.TypeOfOp != null) {
-            return this.extractAssignmentForVar(ast.Operand)
-        } else {
-            console.log(JSON.stringify(ast));
+    //GLSL Operator precedence: http://learnwebgl.brown37.net/12_shader_language/glsl_mathematical_operations.html
+    createFormula(ast, prevPriority, vector) {
+        var result;
+        var newPriority = prevPriority;
+
+        switch (ast.Operand) {
+            case "Sequence":
+                newPriority = 17;
+                result = ast.childs.map((a) => {return this.createFormula(a, newPriority, vector)}).join(", ");
+                break;
+
+            case "move second child to first child":
+                newPriority = 16;
+                result = this.clearVarName(ast.childs[0].Operand) +" = " + this.createFormula(ast.childs[1], newPriority);
+                break;
+
+            case "direct index":
+
+                // if (ast.childs[0].TypeOfOp == 'temp 4-component vector of float') {
+                //     result = this.extractAssignmentForVar(ast.childs[0].Operand) + "." + this.createFormula(ast.childs[1], 1, true)
+                // } else if (ast.childs[0].TypeOfOp == 'temp 3-component vector of float') {
+                //     result = this.extractAssignmentForVar(ast.childs[0].Operand) + "." + this.createFormula(ast.childs[1], 1, true)
+                // } else if (ast.childs[0].Operand == 'texture') {
+                //
+                // } else {
+                //     result = this.createFormula(ast.childs[0], 1) + "." + this.createFormula(ast.childs[1], 0, true)
+                // }
+
+                newPriority = 2;
+                if (
+                    ast.childs[0].TypeOfOp && ast.childs[0].TypeOfOp.indexOf("array") >= 0 ||
+                    ast.childs[0].TypeOfOp && ast.childs[0].TypeOfOp.indexOf("matrix") >= 0
+                ) {
+                    result = this.createFormula(ast.childs[0], newPriority) + "[" + this.createFormula(ast.childs[1], newPriority)+"]";
+                } else {
+                    result = this.createFormula(ast.childs[0], newPriority) + "." + this.createFormula(ast.childs[1], newPriority, true);
+                }
+
+                break;
+            case "vector swizzle":
+                newPriority = 2;
+                var index = "";
+                var indexes = ast.childs[1].childs;
+                for (var i = 0; i < indexes.length; i++) {
+                    index += this.createFormula(indexes[i], newPriority, true);
+                }
+
+                result = this.createFormula(ast.childs[0], newPriority) + "." + index;
+                break;
+
+
+            case "Convert double to float":
+                result = this.createFormula(ast.childs[0], prevPriority);
+                break;
+            case "Convert float to double":
+                result = this.createFormula(ast.childs[0], prevPriority);
+                break;
+
+            case "divide":
+                newPriority = 4;
+                result = this.createFormula(ast.childs[0], newPriority) + "/" +this.createFormula(ast.childs[1], newPriority);
+                break;
+            case "component-wise multiply":
+                newPriority = 4;
+                result = this.createFormula(ast.childs[0], newPriority) + " * " +this.createFormula(ast.childs[1], newPriority);
+                break;
+            case "vector-times-matrix":
+                newPriority = 4;
+                result = this.createFormula(ast.childs[0], newPriority) + " * " +this.createFormula(ast.childs[1], newPriority);
+                break;
+            case "vector-scale":
+                newPriority = 4;
+                result = this.createFormula(ast.childs[0], newPriority) + " * " +this.createFormula(ast.childs[1], newPriority);
+                break;
+
+            case "Negate value":
+                newPriority = 3;
+                result = result = "-" + this.createFormula(ast.childs[0], newPriority) ;
+                break;
+
+             case "add":
+                newPriority = 5;
+                result = this.createFormula(ast.childs[0], newPriority) + " + " + this.createFormula(ast.childs[1], newPriority);
+                break;
+
+            case "subtract":
+                newPriority = 5;
+                result = this.createFormula(ast.childs[0], newPriority) + " - " + this.createFormula(ast.childs[1], newPriority);
+                break;
+
+            case "Constant:":
+                if (vector) {
+                    var colors = ['r', 'g', 'b', 'a'];
+                    result = ast.childs.map((a) => {return colors[parseInt(a.Operand)]}).join(", ");
+                } else {
+                    result = ast.childs.map((a) => {return a.Operand}).join(", ");
+                }
+                break;
+
+            // Function calls
+
+            case "Construct vec3":
+                newPriority = 2;
+                result = "vec3(" +ast.childs.map((a) => {return this.createFormula(a, 99)}).join(", ") + ")";
+                break;
+            case "Construct mat3":
+                newPriority = 2;
+                result = "mat3(" +ast.childs.map((a) => {return this.createFormula(a, 99)}).join(", ") + ")";
+                break;
+            case "Construct mat4":
+                newPriority = 2;
+                result = "mat4(" +ast.childs.map((a) => {return this.createFormula(a, 99)}).join(", ") + ")";
+                break;
+
+            case "Construct vec4":
+                newPriority = 2;
+                result = "vec4(" +ast.childs.map((a) => {return this.createFormula(a, 99)}).join(", ") + ")";
+                break;
+
+            case "mix":
+                newPriority = 2;
+                result = "mix(" +ast.childs.map((a) => {return this.createFormula(a, 99)}).join(", ") + ")";
+                break;
+
+            case "clamp":
+                newPriority = 2;
+                result = "clamp(" +ast.childs.map((a) => {return this.createFormula(a, 99)}).join(", ") + ")";
+                break;
+
+            case "pow":
+                newPriority = 2;
+                result = "pow(" + this.createFormula(ast.childs[0], 99) + ", " +this.createFormula(ast.childs[1], 99)+")" ;
+                break;
+            case "normalize":
+                newPriority = 2;
+                result = "normalize(" + this.createFormula(ast.childs[0], 99) + ")";
+                break;
+
+            case "sqrt":
+                newPriority = 2;
+                result = "sqrt(" + this.createFormula(ast.childs[0], 99) + ")";
+                break;
+
+            case "texture":
+                newPriority = 2;
+                if (!ast.childs[0]) {
+                    console.log("error occured in ", this.fileName, JSON.stringify(ast));
+                }
+                result = "texture(" +this.createFormula(ast.childs[0], 99) + "," + this.createFormula(ast.childs[1], 99) + ")";
+                break;
+
+            case "dot-product":
+                newPriority = 2;
+                result = "dot(" + this.createFormula(ast.childs[0], 99) + "," +this.createFormula(ast.childs[1], 99)+")" ;
+                break;
+
+            default:
+                if (ast.TypeOfOp != null) {
+                    result = this.extractAssignmentForVar(ast.Operand, prevPriority)
+                } else {
+                    console.log(JSON.stringify(ast));
+                }
+            break;
         }
-    
-        return ""
+        if (newPriority > prevPriority) {
+            result = "(" + result + ")";
+        }
+
+        return result;
     }
 
-    extractAssignmentForVar(name) {
-        if (name.indexOf("matDiffuse") > 0 || name.indexOf("diffTerm") > 0 || name.indexOf("envTerm") > 0 || name.indexOf("specTerm") > 0) {
+    extractAssignmentForVar(name, prevPriority) {
+        if (name.indexOf("matDiffuse") > 0
+            || name.indexOf("diffTerm") > 0
+            || name.indexOf("envTerm") > 0
+            || name.indexOf("specTerm") > 0
+            || name.indexOf("opacity") > 0
+            || name.indexOf("gammaDiffTerm") > 0
+            || name.indexOf("localPos") > 0
+            || name.indexOf("normal") > 0
+            || name.indexOf("position") > 0
+            || name.indexOf("normPos") > 0
+            || name.indexOf("pc_genericParams") > 0) {
             return this.clearVarName(name);
         }
         if (this.assigmentArray[name]) {
-            return "(" + this.createFormula(this.assigmentArray[name]) + ")";
+            return this.createFormula(this.assigmentArray[name], prevPriority);
         } else {
             return this.clearVarName(name);
         }
     }
 
-    escapeRegExp(str) {
+    static escapeRegExp(str) {
         return str.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
     }
 
     extractAssignmentCleraedForVar(name) {
         if (this.assigmentArrayCleared[name]) {
             return this.createFormula(this.assigmentArrayCleared[name])
-                .replace(new RegExp(this.escapeRegExp("texture(pt_map0,(in_tc0))"), 'g'), "tex")
-                .replace(new RegExp(this.escapeRegExp("texture(pt_map0,in_tc0)"), 'g'), "tex")
-                .replace(new RegExp(this.escapeRegExp("texture(pt_map1,in_tc1)"), 'g'), "tex2")
-                .replace(new RegExp(this.escapeRegExp("texture(pt_map2,in_tc2)"), 'g'), "tex3")
+                // .replace(new RegExp(this.escapeRegExp("texture(pt_map0,(in_tc0))"), 'g'), "tex")
+                // .replace(new RegExp(this.escapeRegExp("texture(pt_map0,in_tc0)"), 'g'), "tex")
+                // .replace(new RegExp(this.escapeRegExp("texture(pt_map1,in_tc1)"), 'g'), "tex2")
+                // .replace(new RegExp(this.escapeRegExp("texture(pt_map2,in_tc2)"), 'g'), "tex3")
         } else {
             return this.clearVarName(name);
         }
@@ -264,3 +368,12 @@ class Ast {
 }
 
 module.exports = Ast;
+
+
+
+// Shader: Combiners_Mod_AddAlpha_Alpha
+// matDiffuse = ((in_col0.rgb) * (2.000000)) * ((tex).rgb)
+// gammaDiffTerm = (matDiffuse) * (vec3((1.000000)))
+// opacity = (((tex).a) + (((tex2).a)) * (((0.300000) * ((tex2).r) + (0.590000) * ((tex2).g) + (0.110000) * ((tex2).b)))) * (in_col0.a)
+// specTerm
+// final = ((((vec4(sqrt((((matDiffuse) * (vec3((1.000000))))) * (((matDiffuse) * (vec3((1.000000)))))) + (((tex2).rgb) * (((tex2).a))) * (1.000000 - ((tex).a)), ((((((tex).a) + (((tex2).a)) * (((0.300000) * ((tex2).r) + (0.590000) * ((tex2).g) + (0.110000) * ((tex2).b)))) * (in_col0.a))) * (pc_visParams.r)))))))
