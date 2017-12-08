@@ -307,6 +307,7 @@ class Ast {
                 }
             break;
         }
+
         if (newPriority > prevPriority) {
             result = "(" + result + ")";
         }
@@ -328,8 +329,14 @@ class Ast {
             || name.indexOf("pc_genericParams") > 0) {
             return this.clearVarName(name);
         }
+        var result;
         if (this.assigmentArray[name]) {
-            return this.createFormula(this.assigmentArray[name], prevPriority);
+            result = this.createFormula(this.assigmentArray[name], prevPriority);
+            //HACK
+            if (result == "(normPos - normal * 2.000000 * dot(normPos,normal))") {
+                result = "reflect(normPos, normal)";
+            }
+            return result;
         } else {
             return this.clearVarName(name);
         }
@@ -341,7 +348,7 @@ class Ast {
 
     extractAssignmentCleraedForVar(name) {
         if (this.assigmentArrayCleared[name]) {
-            return this.createFormula(this.assigmentArrayCleared[name])
+            return this.createFormula(this.assigmentArrayCleared[name]);
                 // .replace(new RegExp(this.escapeRegExp("texture(pt_map0,(in_tc0))"), 'g'), "tex")
                 // .replace(new RegExp(this.escapeRegExp("texture(pt_map0,in_tc0)"), 'g'), "tex")
                 // .replace(new RegExp(this.escapeRegExp("texture(pt_map1,in_tc1)"), 'g'), "tex2")
