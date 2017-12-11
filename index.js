@@ -84,7 +84,7 @@ process.on('exit', ()=> {
     console.log(outputPixelShader.join(""))
 });
 
-var commandline = process.argv[2] + "glslangValidator -i ";
+var commandline = process.argv[2] + "glslangValidator.exe -i ";
 var shaderDir = process.argv[3];
 for (let i = 0; i < pixelshaderNames.length; i++) {
     let shaderCurrDir = shaderDir + pixelshaderNames[i].toLocaleLowerCase() + "/";
@@ -95,21 +95,14 @@ for (let i = 0; i < pixelshaderNames.length; i++) {
 
     (function a(inputFile, outputFile, debugFile, pixelshaderName, i) {
         fs.createReadStream(inputFile).pipe(fs.createWriteStream(outputFile)).on('finish', function () {
-
             exec(commandline + '\"' + outputFile + '\"', (err, stdout, stderr) => {
                 var debug = fs.createWriteStream(debugFile);
                 debug.write(stdout);
                 debug.end();
 
-                var output = "Shader: " + pixelshaderName + '\n';
-                var ast = new Ast(stdout, pixelshaderName);
 
-                output += (ast.extractAssignmentCleraedForVar('matDiffuse')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('gammaDiffTerm')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('opacity')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('specTerm')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('final')) + '\n';
-                output += ("\n");
+                var ast = new Ast(stdout, pixelshaderName);
+                var output = ast.generateVariableDump(i, "uPixelShader");
 
                 outputPixelShader[i] = output;
             });
@@ -130,8 +123,11 @@ for (let i = 0; i < vertexshaderNames.length; i++) {
             .pipe(es.split())                  //split stream to break on newlines
             .pipe(es.map(function (data, cb) { //turn this async function into a stream
                 cb(null,
+                    (data.indexOf("clamp") >  0)
+                        ?
                             data.replace(new RegExp(Ast.escapeRegExp(" 0,"), 'g'), " 0.0,")
                             .replace(new RegExp(Ast.escapeRegExp(" 1)"), 'g'), " 1.0)")  + "\n"
+                        : data+ "\n"
 
 
                 )
@@ -143,18 +139,8 @@ for (let i = 0; i < vertexshaderNames.length; i++) {
                 debug.write(stdout);
                 debug.end();
 
-                var output = "Shader: " + vertexshaderName + '\n';
                 var ast = new Ast(stdout, vertexshaderName);
-
-                output += (ast.extractAssignmentCleraedForVar('localPos')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('normal')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('position')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('normPos')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('out_col0')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('out_tc0')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('out_tc1')) + '\n';
-                output += (ast.extractAssignmentCleraedForVar('out_tc2')) + '\n';
-                output += ("\n");
+                var output = ast.generateVariableDump(i, "uVertexShader");
 
                 outputVertexShader[i] = output;
             });

@@ -4,8 +4,24 @@ class Ast {
         this.fileName = fileName;
         this.assigmentArray = {};
         this.assigmentArrayCleared = {};
+        this.variableForExtraction = [
+            'localPos',
+            'normal',
+            'position',
+            'normPos',
+            "matDiffuse",
+            "diffTerm",
+            "envTerm",
+            "specTerm",
+            "opacity",
+            "gammaDiffTerm",
+            "pc_genericParams",
+            "final",
+            'out_col0', 'out_tc0', 'out_tc1', 'out_tc2'
+        ];
 
         this.createAssignmentArray(this.ast);
+        this.checkAssignments();
     }
 
     traverseTreeAndDelete(head) {
@@ -29,13 +45,13 @@ class Ast {
 
         var lines = string.split("\n");
 
-        for (var j = 0; j < lines.length; j ++) {
+        for (var j = 1; j < lines.length; j ++) {
             var line = lines[j];
 
             // 1. Parse line number
             var lineSplit = line.split(" ");
-            var possibleLineNum = lineSplit[0]
-            var numberSplit = possibleLineNum.split(":")
+            var possibleLineNum = lineSplit[0];
+            var numberSplit = possibleLineNum.split(":");
             if (numberSplit.length != 2)
                 continue;
 
@@ -66,8 +82,8 @@ class Ast {
 
             level = Math.ceil(level / 2);
             var command = line.substr(i, line.length);
-            command.replace(/\n/g, '');
-            command.replace(/\r/g, '');
+            command = command.replace(/\n/g, '');
+            command = command.replace(/\r/g, '');
 
             //3. Parse the line
             var typepos = command.indexOf('(');
@@ -315,23 +331,25 @@ class Ast {
         return result;
     }
 
-    extractAssignmentForVar(name, prevPriority) {
-        if (name.indexOf("matDiffuse") > 0
-            || name.indexOf("diffTerm") > 0
-            || name.indexOf("envTerm") > 0
-            || name.indexOf("specTerm") > 0
-            || name.indexOf("opacity") > 0
-            || name.indexOf("gammaDiffTerm") > 0
-            || name.indexOf("localPos") > 0
-            || name.indexOf("normal") > 0
-            || name.indexOf("position") > 0
-            || name.indexOf("normPos") > 0
-            || name.indexOf("pc_genericParams") > 0) {
-            return this.clearVarName(name);
+    addVariableForExtraction(value) {
+        this.variableForExtraction.push(value);
+    }
+
+    extractAssignmentForVar(name, prevPriority, fullAssigment) {
+        name = name.replace(/'/g, "");
+        for (let i = 0; i < this.variableForExtraction.length; i++) {
+            if (name.indexOf(this.variableForExtraction[i]) >= 0) {
+                return this.clearVarName(name);
+            }
         }
+
         var result;
         if (this.assigmentArray[name]) {
-            result = this.createFormula(this.assigmentArray[name], prevPriority);
+            if (!fullAssigment) {
+                result = this.createFormula(this.assigmentArray[name].childs[1], prevPriority);
+            } else {
+                result = this.createFormula(this.assigmentArray[name], prevPriority);
+            }
             //HACK
             if (result == "(normPos - normal * 2.000000 * dot(normPos,normal))") {
                 result = "reflect(normPos, normal)";
@@ -346,28 +364,51 @@ class Ast {
         return str.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
     }
 
-    extractAssignmentCleraedForVar(name) {
+    extractAssignmentClearedForVar(name) {
+        let result = "";
         if (this.assigmentArrayCleared[name]) {
-            return this.createFormula(this.assigmentArrayCleared[name]);
-                // .replace(new RegExp(this.escapeRegExp("texture(pt_map0,(in_tc0))"), 'g'), "tex")
-                // .replace(new RegExp(this.escapeRegExp("texture(pt_map0,in_tc0)"), 'g'), "tex")
-                // .replace(new RegExp(this.escapeRegExp("texture(pt_map1,in_tc1)"), 'g'), "tex2")
-                // .replace(new RegExp(this.escapeRegExp("texture(pt_map2,in_tc2)"), 'g'), "tex3")
-        } else {
-            return this.clearVarName(name);
+            result = this.createFormula(this.assigmentArrayCleared[name], 99, true) + ";" + '\n';
+        } else if (this.assigmentArray[name]){
+            result = this.createFormula(this.assigmentArray[name], 99, true) + ";" + '\n';
         }
+        return result
+    }
+
+    generateVariableDump(i, shaderVar) {
+        var output = "else if ( "+ shaderVar + " == "+ i +" ) {//" + this.fileName + '\n';
+
+        for (let i = 0; i < this.variableForExtraction.length; i++) {
+            output += (this.extractAssignmentClearedForVar(this.variableForExtraction[i]));
+        }
+        output += "} ";
+        return output;
     }
 
     createAssignmentArray(ast) {
         for (var i = 0; i < ast.childs.length; i++) {
             var sentence = ast.childs[i];
             if (sentence.Operand == "move second child to first child"){
-                this.assigmentArray[sentence.childs[0].Operand] = sentence.childs[1];
+                this.assigmentArray[sentence.childs[0].Operand.replace(/'/g, "")] = sentence;
     
                 var operandCleared = this.clearVarName(sentence.childs[0].Operand);
-                this.assigmentArrayCleared[operandCleared] = sentence;
+                if (!this.assigmentArrayCleared[operandCleared]) {
+                    this.assigmentArrayCleared[operandCleared] = sentence;
+                }
             } else {
                 this.createAssignmentArray(sentence);
+            }
+        }
+    }
+
+    checkAssignments() {
+        for (var varname in this.assigmentArray) {
+            if (this.assigmentArray.hasOwnProperty(varname)) {
+                var formula = this.extractAssignmentForVar(varname, 0);
+
+                //HACK
+                if (formula == "reflect(normPos, normal)") {
+                    this.addVariableForExtraction(varname.replace(/'/g, ""));
+                }
             }
         }
     }
